@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Haus Eiche 3D-Rundgang</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* Layout: Vollbild-Bühne. Links oben die Schrift wie auf einem Planblatt, rechts das Lineal,
+     unten Blattangaben. Eine Welt (Blaupause), deshalb bewusst nur ein Farbschema. */
+  --paper:#0f2748;
+  --paper-deep:#0a1c36;
+  --ink:#d6e6ff;
+  --ink-dim:rgba(214,230,255,.66);
+  --rule:rgba(214,230,255,.34);
+  --accent:#ffb454;
+  --mat:#1d2a28;
+  --font-display:"Archivo","Helvetica Neue",Arial,sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --gutter:clamp(16px,2.6vw,40px);
+  --ease:cubic-bezier(.16,1,.3,1);
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--paper);color:var(--ink);font-family:var(--font-display);overflow:hidden;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit}
+.mono{font-family:var(--font-mono);letter-spacing:.12em;text-transform:uppercase}
+
+/* Zeichentisch hinter dem Blatt */
+#board{position:absolute;inset:0;z-index:0;background:
+  linear-gradient(rgba(255,255,255,.05) 1px,transparent 1px) 0 0/100% 40px,
+  linear-gradient(90deg,rgba(255,255,255,.05) 1px,transparent 1px) 0 0/40px 100%,
+  linear-gradient(rgba(255,255,255,.09) 1px,transparent 1px) 0 0/100% 200px,
+  linear-gradient(90deg,rgba(255,255,255,.09) 1px,transparent 1px) 0 0/200px 100%,
+  radial-gradient(120% 100% at 40% 35%,#24332f 0%,#141d1b 100%)}
+#view{position:absolute;inset:0;z-index:1}
+#gl{position:absolute;inset:0;width:100%;height:100%;display:block}
+#grain{position:absolute;inset:0;z-index:2;pointer-events:none;opacity:.5;mix-blend-mode:soft-light;
+  background:radial-gradient(120% 90% at 50% 45%,rgba(255,255,255,0) 55%,rgba(4,10,22,.55) 100%)}
+#scroller{position:absolute;inset:0;z-index:3;overflow-y:scroll;overflow-x:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none;outline:none}
+#scroller::-webkit-scrollbar{display:none}
+#scroller:focus-visible{box-shadow:inset 0 0 0 2px var(--accent)}
+#track{width:1px}
+body.locked #scroller{overflow:hidden}
+.ui{position:absolute;z-index:5;pointer-events:none;transition:opacity .5s var(--ease)}
+body.intro .ui,body.intro .hero{opacity:0 !important}
+
+/* Kopf */
+.top{left:0;right:0;top:0;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:22px var(--gutter)}
+.mark{pointer-events:auto;background:none;border:0;padding:0;cursor:pointer;font-weight:800;font-stretch:125%;font-size:20px;letter-spacing:.06em;text-shadow:0 1px 14px rgba(8,20,40,.75)}
+.pill{pointer-events:auto;display:inline-flex;align-items:center;height:38px;padding:0 18px;border:1px solid var(--ink);border-radius:999px;background:rgba(15,39,72,.55);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);font:500 11px/1 var(--font-mono);letter-spacing:.12em;text-transform:uppercase;cursor:pointer;text-decoration:none;color:var(--ink);transition:background .5s var(--ease),color .5s var(--ease),border-color .5s var(--ease)}
+.pill:hover,.pill--solid{background:var(--ink);color:var(--paper)}
+.pill--solid:hover{background:var(--accent);border-color:var(--accent)}
+.wip{top:33px;right:calc(var(--gutter) + 190px);padding:5px 9px 4px;border-radius:3px;background:rgba(15,39,72,.72);font:500 9px/1 var(--font-mono);letter-spacing:.2em;text-transform:uppercase;white-space:nowrap}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+
+/* Titel auf dem Blatt */
+.hero{position:absolute;z-index:5;pointer-events:none;left:var(--gutter);top:84px;right:var(--gutter);bottom:0;transition:opacity .6s var(--ease)}
+.kicker{margin:0;font:500 11px/1.4 var(--font-mono);letter-spacing:.14em;text-transform:uppercase}
+.kicker span{color:var(--accent);margin:0 6px}
+.hero h1{margin:14px 0 0;font-weight:800;font-stretch:112%;font-size:clamp(40px,4.5vw,84px);line-height:.94;letter-spacing:-.01em;text-transform:uppercase}
+.mask{display:block;overflow:hidden;padding-bottom:.06em}
+.mask>span{display:block;transform:translateY(0);transition:transform 1.1s var(--ease)}
+body.intro .mask>span,.finale:not(.on) .mask>span{transform:translateY(112%)}
+.mask:nth-child(2)>span{transition-delay:.09s}.mask:nth-child(3)>span{transition-delay:.18s}
+.hero em,.finale em{font-style:normal;color:var(--accent)}
+.lede{width:min(320px,80vw);margin:26px 0 0;font:400 15px/1.55 var(--font-display);color:var(--ink-dim)}
+.titleblock{position:absolute;left:0;bottom:62px;display:grid;grid-template-columns:repeat(2,auto);border:1px solid var(--ink);background:rgba(15,39,72,.7);font:400 10px/1.3 var(--font-mono);letter-spacing:.08em;text-transform:uppercase}
+.titleblock div{padding:7px 12px 8px;border-left:1px solid var(--ink);border-top:1px solid var(--ink);display:flex;flex-direction:column;gap:4px}
+.titleblock div:nth-child(odd){border-left:0}
+.titleblock div:nth-child(-n+2){border-top:0}
+.titleblock span{opacity:.6;font-size:8.5px}
+.titleblock b{font-weight:500}
+
+/* Raum-Marker */
+.tag{position:absolute;z-index:6;left:0;top:0;pointer-events:none;opacity:0;visibility:hidden;transition:opacity .5s var(--ease),visibility .5s;will-change:transform;color:#f4f8ff;text-shadow:0 1px 14px rgba(4,10,22,.7),0 0 2px rgba(4,10,22,.6)}
+.tag.on{opacity:1;visibility:visible}
+.tag__in{display:flex;align-items:flex-start;gap:22px}
+.tag.flip .tag__in{flex-direction:row-reverse}
+.tag__mark{pointer-events:auto;position:relative;flex:none;width:34px;height:34px;margin-top:26px;background:none;border:0;cursor:pointer;color:inherit}
+.tag__mark::before{content:"";position:absolute;inset:0;background:
+  linear-gradient(currentColor,currentColor) 0 0/9px 1.5px,linear-gradient(currentColor,currentColor) 0 0/1.5px 9px,
+  linear-gradient(currentColor,currentColor) 100% 0/9px 1.5px,linear-gradient(currentColor,currentColor) 100% 0/1.5px 9px,
+  linear-gradient(currentColor,currentColor) 0 100%/9px 1.5px,linear-gradient(currentColor,currentColor) 0 100%/1.5px 9px,
+  linear-gradient(currentColor,currentColor) 100% 100%/9px 1.5px,linear-gradient(currentColor,currentColor) 100% 100%/1.5px 9px;background-repeat:no-repeat;transition:transform .5s var(--ease)}
+.tag__mark::after{content:"+";position:absolute;inset:0;display:grid;place-items:center;font:500 14px/1 var(--font-mono);text-shadow:none}
+.tag__mark:hover::before{transform:scale(1.22)}
+.tag__body{position:relative;padding:12px 0 0 14px;border-top:1.5px solid currentColor}
+.tag__body::before{content:"";position:absolute;left:0;top:0;width:1.5px;height:calc(100% + 18px);background:currentColor}
+.tag__no{display:block;font:500 10px/1 var(--font-mono);letter-spacing:.16em;text-transform:uppercase;color:var(--accent);position:absolute;top:-16px;left:14px}
+.tag__title{margin:0;font-weight:800;font-stretch:125%;font-size:clamp(26px,2.9vw,46px);line-height:.95;text-transform:uppercase;white-space:nowrap}
+.tag__meta{pointer-events:auto;display:block;margin:12px 0 0;background:none;border:0;padding:0;cursor:pointer;font:400 10.5px/1.5 var(--font-mono);letter-spacing:.12em;text-transform:uppercase;white-space:nowrap;text-align:left;text-shadow:inherit}
+.tag__meta b{font-weight:400;color:var(--accent);margin:0 4px}
+
+/* große Zeile über der Szene */
+.beat{left:var(--gutter);right:var(--gutter);top:42%;margin:0;text-align:center;font-weight:800;font-stretch:125%;font-size:clamp(28px,4.2vw,66px);line-height:1.02;text-transform:uppercase;color:#f4f8ff;text-shadow:0 2px 30px rgba(4,10,22,.6);opacity:0}
+.beat.on{opacity:1}
+
+/* Lineal, Zähler, Hinweis, Ecke */
+.ruler{right:14px;top:92px;bottom:92px;width:44px}
+.ruler i{position:absolute;right:0;height:1px;width:6px;background:currentColor;opacity:.55}
+.ruler i.big{width:14px;opacity:1}
+.ruler i.big::after{content:attr(data-no);position:absolute;right:20px;top:-5px;font:500 9px/1 var(--font-mono);letter-spacing:.1em;font-style:normal}
+.ruler__now{position:absolute;right:0;width:26px;height:1.5px;background:var(--accent);transition:top .2s linear}
+.ruler,.count,.corner,.hint{color:var(--ink);text-shadow:0 1px 10px rgba(4,10,22,.75)}
+.count{right:var(--gutter);bottom:22px;margin:0;font:500 10px/1 var(--font-mono);letter-spacing:.14em;text-transform:uppercase}
+.count b{font-weight:500}
+.corner{left:var(--gutter);bottom:20px;display:flex;align-items:center;gap:12px;font:500 10px/1 var(--font-mono);letter-spacing:.14em;text-transform:uppercase}
+.corner button{pointer-events:auto;background:none;border:0;padding:4px 0;cursor:pointer;letter-spacing:inherit;text-transform:inherit}
+.corner span{width:1px;height:10px;background:var(--rule)}
+.hint{left:50%;bottom:22px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:9px;font:500 10px/1 var(--font-mono);letter-spacing:.2em;text-transform:uppercase;white-space:nowrap}
+.hint i{display:block;width:92px;height:1px;background:var(--rule);position:relative}
+.hint b{position:absolute;left:0;top:-.5px;height:2px;width:0;background:var(--accent)}
+
+/* kleiner Lageplan */
+.radar{left:var(--gutter);bottom:54px;width:168px;opacity:0}
+.radar.on{opacity:1}
+.radar canvas{display:block;width:168px;height:144px}
+.radar p{margin:6px 0 0;font:500 9px/1.3 var(--font-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink);text-shadow:0 1px 10px rgba(4,10,22,.8)}
+
+/* Akte */
+.file{position:absolute;z-index:15;right:0;top:0;bottom:0;width:min(440px,100%);padding:84px 34px 34px;background:rgba(10,28,54,.97);border-left:1px solid var(--rule);transform:translateX(102%);transition:transform .7s var(--ease);overflow-y:auto;visibility:hidden}
+.file.on{transform:none;visibility:visible}
+.file__close{position:absolute;right:28px;top:26px;background:none;border:0;cursor:pointer;font:500 11px/1 var(--font-mono);letter-spacing:.14em;text-transform:uppercase}
+.file__no{margin:0 0 14px;font:500 11px/1 var(--font-mono);letter-spacing:.16em;text-transform:uppercase;color:var(--accent)}
+.file__title{margin:0 0 10px;font-weight:800;font-stretch:125%;font-size:44px;line-height:.95;text-transform:uppercase}
+.file__time{margin:0 0 26px;font:400 11px/1 var(--font-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-dim)}
+.file__text{margin:0 0 30px;font:400 19px/1.45 var(--font-display);max-width:32em}
+.file__facts{list-style:none;margin:0;padding:0;border-top:1px solid var(--rule)}
+.file__facts li{display:flex;justify-content:space-between;gap:18px;padding:12px 0;border-bottom:1px solid var(--rule);font:400 11px/1.4 var(--font-mono);letter-spacing:.1em;text-transform:uppercase}
+.file__facts span{color:var(--ink-dim)}
+.file__facts b{font-weight:500;text-align:right}
+
+/* Planrolle */
+.roll{position:absolute;z-index:8;top:-40vh;left:0;width:92px;height:180vh;pointer-events:none;opacity:0;will-change:transform;
+  background:linear-gradient(90deg,#06132a 0%,#16376a 9%,#2a5797 24%,#3f72b8 38%,#2a5797 54%,#17396d 74%,#0b1f40 90%,#050f22 100%);
+  box-shadow:46px 0 60px rgba(2,6,14,.55),14px 0 20px rgba(2,6,14,.5),3px 0 4px rgba(2,6,14,.45)}
+.roll::before{content:"";position:absolute;inset:0;opacity:.5;background:repeating-linear-gradient(180deg,rgba(214,230,255,.16) 0 1px,transparent 1px 38px)}
+.roll::after{content:"";position:absolute;inset:0 auto 0 -2px;width:3px;background:rgba(214,230,255,.55)}
+
+/* Lader */
+.loader{position:absolute;inset:0;z-index:20;display:grid;place-items:center;background:var(--paper);text-align:center;padding:24px;transition:opacity .9s var(--ease),visibility .9s}
+.loader.off{opacity:0;visibility:hidden}
+.loader__place{margin:0 0 9vh;font:500 11px/1.6 var(--font-mono);letter-spacing:.3em;text-transform:uppercase}
+.loader__story{position:relative;height:3.2em;font-weight:800;font-stretch:125%;font-size:clamp(20px,2.6vw,36px);line-height:1.15;text-transform:uppercase}
+.loader__story p{position:absolute;left:50%;top:0;width:min(92vw,26em);transform:translate(-50%,12px);margin:0;opacity:0;transition:opacity .6s var(--ease),transform .6s var(--ease)}
+.loader__story p.on{opacity:1;transform:translate(-50%,0)}
+.loader__bar{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:9vh;font:500 10px/1 var(--font-mono);letter-spacing:.2em;text-transform:uppercase}
+.loader__bar i{display:block;width:min(240px,40vw);height:1px;background:var(--rule);position:relative}
+.loader__bar b{position:absolute;left:0;top:-.5px;height:2px;width:0;background:var(--ink)}
+.loader__note{margin:20px 0 0;font:500 9.5px/1.6 var(--font-mono);letter-spacing:.3em;text-transform:uppercase;opacity:.55}
+
+/* Schluss */
+.finale{position:absolute;inset:0;z-index:7;pointer-events:none;opacity:0;visibility:hidden;transition:opacity .9s var(--ease),visibility .9s;display:flex;flex-direction:column;justify-content:flex-end;padding:0 var(--gutter) 18px;
+  background:linear-gradient(90deg,rgba(15,39,72,.97) 0%,rgba(15,39,72,.95) 46%,rgba(15,39,72,.72) 100%)}
+.finale.on{opacity:1;visibility:visible}
+.finale.on .cta,.finale.on .file__close{pointer-events:auto}
+.finale h2{margin:0 0 22px;font-weight:800;font-stretch:112%;font-size:clamp(30px,4.3vw,78px);line-height:.96;letter-spacing:-.01em;text-transform:uppercase}
+.finale .lede2{max-width:520px;margin:0 0 26px;font:400 16px/1.55 var(--font-display);color:var(--ink-dim)}
+.cta{display:flex;flex-wrap:wrap;align-items:center;gap:26px;pointer-events:none}
+.finale.on .cta a,.finale.on .cta button{pointer-events:auto}
+.link{background:none;border:0;border-bottom:1px solid currentColor;padding:0 0 4px;cursor:pointer;font:500 11px/1 var(--font-mono);letter-spacing:.12em;text-transform:uppercase}
+.demo-note{margin:14px 0 0;font:400 11px/1.5 var(--font-mono);letter-spacing:.08em;color:var(--ink-dim)}
+.ghost{margin:3vh 0 0;font-weight:800;font-stretch:125%;font-size:clamp(56px,14vw,250px);line-height:.8;letter-spacing:-.02em;color:transparent;-webkit-text-stroke:1px rgba(214,230,255,.2);white-space:nowrap;text-transform:uppercase;overflow:hidden}
+.meta{display:grid;grid-template-columns:repeat(4,auto);justify-content:space-between;gap:10px 24px;margin-top:16px;padding-top:14px;border-top:1px solid var(--rule);font:400 10px/1.5 var(--font-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-dim)}
+.credit{margin:12px 0 0;font:400 10px/1.5 var(--font-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-dim)}
+.nogl{position:absolute;inset:0;z-index:30;display:none;place-items:center;padding:24px;text-align:center;background:var(--paper)}
+.nogl p{max-width:30em;line-height:1.5}
+
+@media (max-width:760px){
+  .hero{top:74px}
+  .hero h1{font-size:34px}
+  .titleblock,.lede,.wip,.radar{display:none}
+  .ruler{right:6px;top:120px;bottom:120px}
+  .tag__title{font-size:25px}
+  .tag{right:0}
+  .tag__meta{white-space:normal;max-width:70vw}
+  .tag__mark{margin-top:18px}
+  .tag__in{gap:12px}
+  .corner{display:none}
+  .hint{bottom:40px}
+  .count{left:var(--gutter);right:auto}
+  .meta{grid-template-columns:1fr 1fr}
+  .finale h2{font-size:34px}
+  .file{padding:74px 22px 24px}
+  .file__title{font-size:34px}
+}
+@media (prefers-reduced-motion:reduce){
+  .mask>span,.tag,.ui,.finale,.file,.loader,.loader__story p{transition:none}
+}
+</style>
+</head>
+<body class="intro locked">
+<div id="board" aria-hidden="true"></div>
+<div id="view"><canvas id="gl" aria-hidden="true"></canvas><div id="grain" aria-hidden="true"></div></div>
+<div id="scroller" tabindex="0" role="region" aria-label="3D-Rundgang durch Haus Eiche. Scrollen Sie, um durch das Haus zu gehen."><div id="track"></div></div>
+
+<div class="loader" id="loader">
+  <div>
+    <p class="loader__place">Nordlot · Architekten<br>Dortmund</p>
+    <div class="loader__story" aria-live="polite">
+      <p>Am Anfang ist jedes Haus nur Linie.</p>
+      <p>Haus Eiche: neun Räume, ein Hof, ein Baum von 1890.</p>
+      <p>Gehen Sie einmal hindurch.</p>
+    </div>
+    <div class="loader__bar"><span>Zeichne</span><i><b id="loadFill"></b></i><span id="loadPct">0 %</span></div>
+    <p class="loader__note">Konzeptstudie · am besten auf dem Laptop</p>
+  </div>
+</div>
+
+<header class="ui top">
+  <button class="mark" id="mark" type="button" aria-label="Nordlot, zurück zum Plan">NORDLOT</button>
+  <button class="pill" id="pillTop" type="button">Projekt starten</button>
+</header>
+<p class="ui wip">Konzeptstudie</p>
+
+<section class="hero" id="hero" aria-label="Haus Eiche, Grundriss Erdgeschoss">
+  <p class="kicker">Nordlot <span>·</span> Haus Eiche, Schwerte <span>·</span> 2026</p>
+  <h1>
+    <span class="mask"><span>Erst Linie.</span></span>
+    <span class="mask"><span>Dann Wand.</span></span>
+    <span class="mask"><span>Dann <em>Zuhause.</em></span></span>
+  </h1>
+  <p class="lede">Ein Hofhaus mit 355 m² am Südhang über der Ruhr. Scrollen Sie und gehen Sie in die Zeichnung hinein.</p>
+  <div class="titleblock" aria-hidden="true">
+    <div><span>Projekt</span><b>Haus Eiche</b></div>
+    <div><span>Zeichnung</span><b>Grundriss EG</b></div>
+    <div><span>Maßstab</span><b>1 : 100</b></div>
+    <div><span>Blatt</span><b>A-101 Index C</b></div>
+  </div>
+</section>
+
+<div id="tags"></div>
+<p class="ui beat" id="beat" aria-hidden="true"></p>
+
+<nav class="ui ruler" id="ruler" aria-hidden="true"><div class="ruler__now" id="rulerNow"></div></nav>
+<p class="ui count" id="count"><b>00</b> / 07 Räume</p>
+<div class="ui hint" id="hint"><span id="hintText">Scrollen und eintreten</span><i><b id="hintFill"></b></i></div>
+<div class="ui radar" id="radar" aria-hidden="true"><canvas id="radarC" width="336" height="288"></canvas><p id="radarP">Standort</p></div>
+<footer class="ui corner">
+  <button type="button" data-to="end">Projekte</button><span></span><button type="button" data-to="end">Büro</button><span></span><button type="button" data-to="end">Kontakt ›</button>
+</footer>
+
+<div class="roll" id="roll" aria-hidden="true"></div>
+
+<section class="finale" id="finale" aria-label="Über Nordlot">
+  <p class="kicker" style="margin-bottom:22px">A-101 <span>·</span> Grundriss Erdgeschoss</p>
+  <h2>
+    <span class="mask"><span>Wir zeichnen Häuser,</span></span>
+    <span class="mask"><span>in denen man schon <em>stehen</em> kann.</span></span>
+  </h2>
+  <p class="lede2">Nordlot ist ein Büro von fünf Leuten in Dortmund. Wir planen Wohnhäuser, Umbauten und alle paar Jahre etwas Öffentliches. Jedes Projekt bekommt einen solchen Rundgang, bevor der erste Stein gesetzt ist.</p>
+  <div class="cta">
+    <button class="pill pill--solid" id="ctaEnd" type="button">Projekt besprechen</button>
+    <button class="link" id="again" type="button">Noch einmal von oben</button>
+  </div>
+  <p class="demo-note" id="demoNote" hidden>Demo: Hier öffnet sich später das Kontaktformular.</p>
+  <p class="ghost" aria-hidden="true">Nordlot</p>
+  <div class="meta">
+    <span>51.44° N · 7.57° O</span>
+    <span>Am Hang 4, Schwerte</span>
+    <span>Konzeptseite, live im Browser gerendert</span>
+    <span>Alle Materialien im Code erzeugt</span>
+  </div>
+  <p class="credit">Konzept: Seofessionals · Büro, Haus und Adresse sind erfunden</p>
+</section>
+
+<aside class="file" id="file" aria-hidden="true" aria-labelledby="fileTitle">
+  <button class="file__close" id="fileClose" type="button">Schließen ×</button>
+  <p class="file__no" id="fileNo"></p>
+  <h3 class="file__title" id="fileTitle"></h3>
+  <p class="file__time" id="fileTime"></p>
+  <p class="file__text" id="fileText"></p>
+  <ul class="file__facts" id="fileFacts"></ul>
+</aside>
+
+<div class="nogl" id="nogl"><p>Diese Seite baut ein Haus in Echtzeit und braucht dafür WebGL 2. Bitte öffnen Sie sie in einem aktuellen Browser.</p></div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.min.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/house.js"></script>
+<script src="js/site.js"></script>
+<script src="js/staging.js"></script>
+<script src="js/story.js"></script>
+</body>
+</html>
